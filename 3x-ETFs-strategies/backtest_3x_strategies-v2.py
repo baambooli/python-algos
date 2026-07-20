@@ -3,7 +3,9 @@ import pandas as pd, numpy as np
 
 # CSV files live in the same folder as this script; resolve relative to it
 # so the script works regardless of the current working directory.
-U = os.path.dirname(os.path.abspath(__file__))
+# U = os.path.dirname(os.path.abspath(__file__))
+
+U = os.path.dirname("D:/share/stooq_output_us")
 def load(t):
     df = pd.read_csv(f"{U}/{t}.CSV")
     df.columns = [c.strip("<>").lower() for c in df.columns]

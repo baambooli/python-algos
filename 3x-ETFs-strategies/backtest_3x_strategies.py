@@ -1,6 +1,7 @@
 import pandas as pd, numpy as np
 
-U = "."  # CSV EOD ETFs data are in the current folder
+# U = "."  # CSV EOD ETFs data are in the current folder
+U = os.path.dirname("D:/share/stooq_output_us")
 def load(t):
     df = pd.read_csv(f"{U}/{t}.CSV")
     df.columns = [c.strip("<>").lower() for c in df.columns]
