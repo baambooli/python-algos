@@ -314,8 +314,7 @@ def load_ohlcv(folder, ticker):
     if not path.exists():
         raise ValueError(f"No data file for ticker '{ticker}'.")
     try:
-        df = pd.read_csv(path, usecols=["<DATE>", "<CLOSE>", "<VOL>"] if False else ["DATE", "CLOSE", "VOL"],
-                         dtype={"DATE": str})
+        df = pd.read_csv(path, usecols=["DATE", "CLOSE", "VOL"], dtype={"DATE": str})
     except Exception as exc:
         raise ValueError(f"Could not read {path.name}: {exc}") from exc
     df = df.dropna(subset=["DATE", "CLOSE"])
@@ -331,7 +330,7 @@ def load_ohlcv(folder, ticker):
     return out
 ```
 
-Note: the real header is `TICKER,PER,DATE,...` without angle brackets in the crypto files (verified on BTCUSDT.CSV), unlike DCA-calc's files. Remove the dead `if False` expression when typing the final code: the `usecols` is simply `["DATE", "CLOSE", "VOL"]`.
+Note: the crypto files' headers have no angle brackets (`TICKER,PER,DATE,...`), unlike DCA-calc's.
 
 - [ ] **Step 4: Run, verify pass**
 
