@@ -2,17 +2,18 @@
 
 ## Goal
 Local Streamlit app (port 8502) charting the MVRV Z-score for 20 major coins, in the style of
-lookintobitcoin.com: one dark overlaid chart, real on-chain MVRV where free data exists, a
+lookintobitcoin.com: one dark overlaid chart, real on-chain MVRV where free, complete data exists, a
 price/volume proxy otherwise. **No dependency on the user's Stooq/Binance CSV folders**: data comes
 only from Coin Metrics Community API and Yahoo Finance, cached inside the project.
 
 ## Coins (verified against both APIs on 2026-09-30)
-- **On-chain (Coin Metrics, free, no key)** - CoinMetrics asset id, free history start:
-  btc 2010-07, ltc 2013-04, doge 2014-01, xmr 2014-05, xrp 2014-08, eth 2015-08, xlm 2015-09,
-  etc 2016-07, bnb 2017-07, link 2017-09, bch 2017-08, ada 2017-12, dot 2020-08, uni 2020-09,
-  icp 2021-05.
-- **Proxy (Yahoo Finance, free, no key)** - Yahoo symbol: SOL-USD, TRX-USD, AVAX-USD, SHIB-USD,
-  HBAR-USD (Coin Metrics does not serve these for free).
+- **On-chain (Coin Metrics, free, no key)** - CoinMetrics asset id, free history start (12 coins):
+  btc 2010-07, ltc 2013-04, doge 2014-01, xrp 2014-08, eth 2015-08, xlm 2015-09, etc 2016-07,
+  link 2017-09, bch 2017-08, ada 2017-12, uni 2020-09, icp 2021-05.
+- **Proxy (Yahoo Finance, free, no key)** - Yahoo symbol (8 coins): SOL-USD, BNB-USD, TRX-USD,
+  AVAX-USD, SHIB-USD, HBAR-USD, DOT-USD, XMR-USD. Coin Metrics does not serve SOL/TRX/AVAX/SHIB/HBAR
+  for free; its free MVRV for BNB ends 2019-04, for DOT ends 2022-06 and is absent for XMR (found
+  during the live download check), so those three also use the proxy.
 - Excluded: stablecoins, exchange/leveraged tokens, TON (no usable Yahoo series).
 - The list lives in one constant (`COINS`) so adding a coin is a one-line change.
 

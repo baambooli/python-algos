@@ -17,7 +17,7 @@
 - Network only on explicit user action (Update data button / `python fetch_data.py`).
 - On-chain: `realized_cap = mcap/mvrv`; `z = (mcap - realized_cap)/expanding population std(mcap)`; first 30 rows NaN.
 - Proxy: expanding VWAP realized price; same z form on close; first 30 rows NaN.
-- 20 coins: on-chain btc ltc doge xmr xrp eth xlm etc bnb link bch ada dot uni icp; proxy SOL TRX AVAX SHIB HBAR.
+- 20 coins: on-chain btc ltc doge xrp eth xlm etc link bch ada uni icp (12); proxy SOL BNB TRX AVAX SHIB HBAR DOT XMR (8).
 - No code-review step; do not use Fable or Opus models.
 
 ## Review Focus
@@ -51,7 +51,7 @@
 - `data.py`: `Coin(symbol, name, kind, source_id)` NamedTuple; `COINS: list[Coin]` (20); `DATA_DIR` (Path, default `<project>/data`, override env `MVRV_DATA_DIR`); `cache_status(folder=DATA_DIR) -> dict[str,bool]`; `last_updated(folder) -> datetime|None`; `load_coin(coin, folder=DATA_DIR) -> DataFrame` (onchain cols `price,mcap,mvrv`; proxy cols `close,vol`; date-indexed ascending, deduped, NaN/non-positive rows dropped, raises `ValueError` if file missing or empty).
 - `fetch_data.py`: `parse_coinmetrics(pages) -> DataFrame`; `parse_yahoo(payload) -> DataFrame`; `fetch_coin(coin, get) -> DataFrame`; `fetch_all(folder=DATA_DIR, get=http_get, progress=None) -> dict[str,str]` mapping symbol to `"ok <rows> rows"` or `"failed: <reason>"`; `http_get(url) -> dict` (requests, UA header, 30 s timeout, raises on HTTP error). Running `python fetch_data.py` calls `fetch_all` and prints the results.
 
-- [ ] Step 1: failing tests. `test_fetch.py`: parse_coinmetrics over two pages (strings to floats, `2010-07-18T00:00:00.000000000Z` to date, rows missing CapMVRVCur kept as NaN); `fetch_coin` follows `next_page_url` until absent (fake `get`); parse_yahoo drops null close and treats null volume as 0; `fetch_all` with a fake `get` that raises for one coin writes the other CSVs and reports `failed:` for the bad one; saved CSV round-trips through `load_coin`. `test_data.py`: COINS has 20 unique symbols, 15 onchain and 5 proxy; `load_coin` cleaning for both kinds (duplicates, unsorted, NaN, mvrv <= 0); missing file message; `cache_status`; `last_updated` is None for empty folder.
+- [ ] Step 1: failing tests. `test_fetch.py`: parse_coinmetrics over two pages (strings to floats, `2010-07-18T00:00:00.000000000Z` to date, rows missing CapMVRVCur kept as NaN); `fetch_coin` follows `next_page_url` until absent (fake `get`); parse_yahoo drops null close and treats null volume as 0; `fetch_all` with a fake `get` that raises for one coin writes the other CSVs and reports `failed:` for the bad one; saved CSV round-trips through `load_coin`. `test_data.py`: COINS has 20 unique symbols, 12 onchain and 8 proxy; `load_coin` cleaning for both kinds (duplicates, unsorted, NaN, mvrv <= 0); missing file message; `cache_status`; `last_updated` is None for empty folder.
 - [ ] Step 2: run, expect FAIL (imports).
 - [ ] Step 3: implement `data.py` and `fetch_data.py`. Coin Metrics URL: `https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=<id>&metrics=PriceUSD,CapMrktCurUSD,CapMVRVCur&frequency=1d&paging_from=start&page_size=10000&start_time=2009-01-01`. Yahoo URL: `https://query1.finance.yahoo.com/v8/finance/chart/<sym>?period1=0&period2=<now>&interval=1d`.
 - [ ] Step 4: `.venv/Scripts/python.exe -m pip install -q requests`; run `pytest -q`, expect pass.

@@ -1,77 +1,72 @@
-from pathlib import Path
-
 import pytest
 
-from data import DEFAULT_FOLDER, is_excluded, list_tickers, load_ohlcv, rank_tickers
+from data import COINS, cache_status, last_updated, load_coin
 
-HEADER = "TICKER,PER,DATE,TIME,OPEN,HIGH,LOW,CLOSE,VOL,OPENINT\n"
-
-
-def _write(tmp_path, name, rows):
-    body = "".join(f"X,D,{d},00000000,1,1,1,{c},{v},0\n" for d, c, v in rows)
-    (tmp_path / name).write_text(HEADER + body)
+BTC = next(c for c in COINS if c.symbol == "BTC")
+SOL = next(c for c in COINS if c.symbol == "SOL")
 
 
-def test_load_ohlcv_cleans_data(tmp_path):
-    _write(tmp_path, "AAAUSDT.CSV", [
-        ("20240103", 3, 30), ("20240101", 1, 10), ("20240102", 2, 20),
-        ("20240102", 2.5, 25),   # duplicate date: keep last
-        ("20240104", 0, 5),      # non-positive close: dropped
-        ("20240105", "", 5),     # NaN close: dropped
-    ])
-    df = load_ohlcv(tmp_path, "AAAUSDT")
-    assert list(df.columns) == ["close", "vol"]
+def test_coin_list():
+    symbols = [c.symbol for c in COINS]
+    assert len(COINS) == 20 and len(set(symbols)) == 20
+    assert sum(c.kind == "onchain" for c in COINS) == 12
+    assert sum(c.kind == "proxy" for c in COINS) == 8
+    assert {"BTC", "ETH", "BNB", "SOL"} <= set(symbols)
+    assert all(c.kind in ("onchain", "proxy") for c in COINS)
+
+
+def test_load_onchain_cleans_data(tmp_path):
+    (tmp_path / "BTC.csv").write_text(
+        "date,price,mcap,mvrv\n"
+        "2020-01-03,3,300,3\n"
+        "2020-01-01,1,100,1\n"
+        "2020-01-02,2,200,2\n"
+        "2020-01-02,2.5,250,2.5\n"   # duplicate date: keep last
+        "2020-01-04,4,400,0\n"       # mvrv <= 0: dropped
+        "2020-01-05,5,500,\n"        # missing mvrv: dropped
+        "2020-01-06,6,-1,2\n"        # mcap <= 0: dropped
+    )
+    df = load_coin(BTC, tmp_path)
+    assert list(df.columns) == ["price", "mcap", "mvrv"]
     assert df.index.is_monotonic_increasing and df.index.is_unique
-    assert df["close"].tolist() == [1, 2.5, 3]
+    assert df["mcap"].tolist() == [100, 250, 300]
 
 
-def test_load_ohlcv_lowercase_extension(tmp_path):
-    _write(tmp_path, "AAAUSDT.csv", [("20240101", 1, 1)])
-    assert len(load_ohlcv(tmp_path, "AAAUSDT")) == 1
+def test_load_proxy_cleans_data(tmp_path):
+    (tmp_path / "SOL.csv").write_text(
+        "date,close,vol\n"
+        "2020-01-02,2,20\n"
+        "2020-01-01,1,\n"            # missing volume -> 0
+        "2020-01-03,0,5\n"           # non-positive close: dropped
+        "2020-01-04,,5\n"            # missing close: dropped
+    )
+    df = load_coin(SOL, tmp_path)
+    assert list(df.columns) == ["close", "vol"]
+    assert df["close"].tolist() == [1, 2]
+    assert df["vol"].tolist() == [0, 20]
 
 
-def test_load_ohlcv_missing_file(tmp_path):
-    with pytest.raises(ValueError, match="No data file"):
-        load_ohlcv(tmp_path, "NOPEUSDT")
+def test_load_missing_file(tmp_path):
+    with pytest.raises(ValueError, match="Update data"):
+        load_coin(BTC, tmp_path)
 
 
-def test_load_ohlcv_empty_file(tmp_path):
-    (tmp_path / "EMPTYUSDT.CSV").write_text(HEADER)
-    with pytest.raises(ValueError, match="no price rows"):
-        load_ohlcv(tmp_path, "EMPTYUSDT")
+def test_load_missing_folder(tmp_path):
+    with pytest.raises(ValueError, match="Update data"):
+        load_coin(BTC, tmp_path / "nope")
 
 
-def test_list_tickers_sorted_csv_only(tmp_path):
-    for n in ("B.CSV", "A.csv", "notes.txt"):
-        (tmp_path / n).write_text("x")
-    assert list_tickers(tmp_path) == ["A", "B"]
+def test_load_empty_file(tmp_path):
+    (tmp_path / "BTC.csv").write_text("date,price,mcap,mvrv\n")
+    with pytest.raises(ValueError, match="no usable rows"):
+        load_coin(BTC, tmp_path)
 
 
-def test_list_tickers_missing_folder(tmp_path):
-    with pytest.raises(OSError):
-        list_tickers(tmp_path / "missing")
-
-
-def test_rank_tickers_order():
-    t = ["ETHUSDT", "BTCUSDT", "WBTCUSDT", "BTC"]
-    assert rank_tickers(t, "btc") == ["BTC", "BTCUSDT", "WBTCUSDT"]
-    assert rank_tickers(t, "") == t
-    assert rank_tickers(t, "zzz") == []
-
-
-@pytest.mark.parametrize("name", ["BNBBULLUSDT", "ETHBEARUSDT", "BULLUSDT", "USDCUSDT",
-                                   "BUSDUSDT", "DAIUSDT", "TUSDUSDT", "PAXUSDT",
-                                   "EURUSDT", "GBPUSDT", "AUDUSDT", "USDSUSDT", "USDSBUSDT"])
-def test_excluded(name):
-    assert is_excluded(name)
-
-
-@pytest.mark.parametrize("name", ["BTCUSDT", "ETHUSDT", "PAXGUSDT", "BEAMUSDT", "AAVEUSDT"])
-def test_not_excluded(name):
-    assert not is_excluded(name)
-
-
-@pytest.mark.skipif(not Path(DEFAULT_FOLDER).exists(), reason="real data folder not present")
-def test_real_btc_file():
-    df = load_ohlcv(DEFAULT_FOLDER, "BTCUSDT")
-    assert len(df) > 500 and (df["close"] > 0).all()
+def test_cache_status_and_last_updated(tmp_path):
+    assert last_updated(tmp_path) is None
+    assert last_updated(tmp_path / "nope") is None
+    assert not any(cache_status(tmp_path).values())
+    (tmp_path / "BTC.csv").write_text("date,price,mcap,mvrv\n2020-01-01,1,1,1\n")
+    status = cache_status(tmp_path)
+    assert status["BTC"] and not status["ETH"]
+    assert last_updated(tmp_path) is not None

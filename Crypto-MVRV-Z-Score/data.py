@@ -1,55 +1,86 @@
-"""Read Stooq-format daily crypto files: one CSV per ticker."""
+"""Coin list and the local cache of downloaded daily data (one CSV per coin in data/)."""
+import os
+from datetime import datetime
 from pathlib import Path
+from typing import NamedTuple
 
 import pandas as pd
 
-DEFAULT_FOLDER = r"D:\share\stooq_output_crypto"
 
-_STABLE_OR_FIAT = {"USDC", "BUSD", "DAI", "TUSD", "PAX", "USDS", "USDSB", "EUR", "GBP", "AUD"}
-
-
-def list_tickers(folder=DEFAULT_FOLDER):
-    """Sorted ticker names (file stems) found in the folder. Reads filenames only."""
-    return sorted(p.stem for p in Path(folder).iterdir() if p.suffix.lower() == ".csv")
+class Coin(NamedTuple):
+    symbol: str
+    name: str
+    kind: str        # "onchain": Coin Metrics market cap + MVRV; "proxy": Yahoo price + volume
+    source_id: str   # Coin Metrics asset id or Yahoo symbol
 
 
-def rank_tickers(tickers, query, limit=200):
-    """Tickers matching query: exact match first, then prefix, then substring."""
-    q = query.strip().upper()
-    if not q:
-        return list(tickers)[:limit]
-    exact = [t for t in tickers if t.upper() == q]
-    prefix = [t for t in tickers if t.upper().startswith(q) and t.upper() != q]
-    other = [t for t in tickers if q in t.upper() and not t.upper().startswith(q)]
-    return (exact + prefix + other)[:limit]
+COINS = [
+    Coin("BTC", "Bitcoin", "onchain", "btc"),
+    Coin("ETH", "Ethereum", "onchain", "eth"),
+    Coin("XRP", "XRP", "onchain", "xrp"),
+    Coin("BNB", "BNB", "proxy", "BNB-USD"),
+    Coin("ADA", "Cardano", "onchain", "ada"),
+    Coin("DOGE", "Dogecoin", "onchain", "doge"),
+    Coin("LINK", "Chainlink", "onchain", "link"),
+    Coin("XLM", "Stellar", "onchain", "xlm"),
+    Coin("BCH", "Bitcoin Cash", "onchain", "bch"),
+    Coin("LTC", "Litecoin", "onchain", "ltc"),
+    Coin("XMR", "Monero", "proxy", "XMR-USD"),
+    Coin("ETC", "Ethereum Classic", "onchain", "etc"),
+    Coin("DOT", "Polkadot", "proxy", "DOT-USD"),
+    Coin("UNI", "Uniswap", "onchain", "uni"),
+    Coin("ICP", "Internet Computer", "onchain", "icp"),
+    Coin("SOL", "Solana", "proxy", "SOL-USD"),
+    Coin("TRX", "TRON", "proxy", "TRX-USD"),
+    Coin("AVAX", "Avalanche", "proxy", "AVAX-USD"),
+    Coin("SHIB", "Shiba Inu", "proxy", "SHIB-USD"),
+    Coin("HBAR", "Hedera", "proxy", "HBAR-USD"),
+]
+
+_COLUMNS = {"onchain": ["price", "mcap", "mvrv"], "proxy": ["close", "vol"]}
 
 
-def is_excluded(ticker):
-    """True for leveraged tokens (BULL/BEAR) and stablecoin/fiat pairs."""
-    t = ticker.upper()
-    base = t[:-4] if t.endswith("USDT") else t
-    return "BULL" in t or "BEAR" in t or base in _STABLE_OR_FIAT
+def data_dir():
+    """Cache folder: MVRV_DATA_DIR if set, else <project>/data."""
+    return Path(os.environ.get("MVRV_DATA_DIR") or Path(__file__).parent / "data")
 
 
-def load_ohlcv(folder, ticker):
-    """Close and volume for one ticker as a date-indexed, ascending DataFrame."""
-    path = Path(folder) / f"{ticker}.CSV"
+def _path(symbol, folder):
+    return Path(folder or data_dir()) / f"{symbol}.csv"
+
+
+def cache_status(folder=None):
+    """{symbol: True if a cached file exists}."""
+    return {c.symbol: _path(c.symbol, folder).exists() for c in COINS}
+
+
+def last_updated(folder=None):
+    """Newest cache file modification time, or None if nothing is cached."""
+    folder = Path(folder or data_dir())
+    if not folder.is_dir():
+        return None
+    times = [p.stat().st_mtime for p in folder.glob("*.csv")]
+    return datetime.fromtimestamp(max(times)) if times else None
+
+
+def load_coin(coin, folder=None):
+    """Cached data for one coin as a date-indexed, ascending, deduplicated DataFrame."""
+    path = _path(coin.symbol, folder)
     if not path.exists():
-        path = Path(folder) / f"{ticker}.csv"
-    if not path.exists():
-        raise ValueError(f"No data file for ticker '{ticker}'.")
+        raise ValueError(f"No cached data for {coin.symbol}. Click Update data to download it.")
     try:
-        df = pd.read_csv(path, usecols=["DATE", "CLOSE", "VOL"], dtype={"DATE": str})
+        df = pd.read_csv(path, parse_dates=["date"], index_col="date")
     except Exception as exc:
         raise ValueError(f"Could not read {path.name}: {exc}") from exc
-    df = df.dropna(subset=["DATE", "CLOSE"])
+    cols = _COLUMNS[coin.kind]
+    df = df[cols]
+    if coin.kind == "proxy":
+        df = df.assign(vol=df["vol"].fillna(0)).dropna(subset=["close"])
+        df = df[df["close"] > 0]
+    else:
+        df = df.dropna()
+        df = df[(df["mcap"] > 0) & (df["mvrv"] > 0)]
+    df = df[~df.index.duplicated(keep="last")].sort_index()
     if df.empty:
-        raise ValueError(f"{path.name} contains no price rows.")
-    idx = pd.to_datetime(df["DATE"], format="%Y%m%d")
-    out = pd.DataFrame({"close": df["CLOSE"].to_numpy(dtype=float),
-                        "vol": df["VOL"].fillna(0).to_numpy(dtype=float)}, index=idx)
-    out = out[~out.index.duplicated(keep="last")].sort_index()
-    out = out[out["close"] > 0]
-    if out.empty:
-        raise ValueError(f"{path.name} contains no price rows.")
-    return out
+        raise ValueError(f"{path.name} has no usable rows.")
+    return df
